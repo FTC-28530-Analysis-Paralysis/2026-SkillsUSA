@@ -35,10 +35,14 @@ import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.Servo;
+import com.qualcomm.robotcore.util.ElapsedTime;
 
 import org.firstinspires.ftc.robotcore.external.hardware.camera.BuiltinCameraDirection;
 import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
+import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
+
+import java.util.Set;
 
 /*
  * This OpMode executes a Tank Drive control TeleOp a direct drive robot
@@ -53,9 +57,11 @@ import org.firstinspires.ftc.vision.VisionPortal;
  * Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list
  */
 
-@TeleOp(name="Atlanta Tank Preset Arm", group="Robot")
+@TeleOp(name="Skills USA Tank Preset Arm", group="Robot")
 //@Disabled
-public class AtlantaTankPresetArm extends OpMode{
+public class AtlantaTankPresetArmCopy extends OpMode{
+
+
 
     /* Declare OpMode members. */
 
@@ -68,6 +74,9 @@ public class AtlantaTankPresetArm extends OpMode{
     public Servo wrist = null;
     public Servo   claw   = null;
     private VisionPortal visionPortal;
+    private final ElapsedTime stateTimer = new ElapsedTime();
+    private static final double STALL_COOLDOWN_SECONDS = 1.0;  //TODO: test and tune
+    private static final double STALL_CURRENT_AMPS = 1.0; //TODO: test and tune
     double clawOffset = 0;
     final double ARM_TICKS_PER_DEGREE =
             28 // number of encoder ticks per rotation of the bare motor
@@ -80,8 +89,6 @@ public class AtlantaTankPresetArm extends OpMode{
     public static final double MOTOR_MAX_RPM = 312.0;
     public static final double MOTOR_MAX_RPS = MOTOR_MAX_RPM / 60.0;
     public static final double MAX_MOTOR_TICKS_PER_SECOND = MOTOR_MAX_RPS * MOTOR_ENCODER_TICKS_PER_REVOLUTION; // Approx 2796.04
-
-
 
     public static final double TRACK_PITCH_MM = 24.0;
     public static final double TRACK_PITCH_INCHES = TRACK_PITCH_MM / 25.4; // Approx 0.94488
@@ -115,6 +122,8 @@ public class AtlantaTankPresetArm extends OpMode{
     public static int armTargetPos = 0;
     public static final double SLIDE_RTP_MAX_SPEED =  0.75 ;   // Max speed/power for slide during RUN_TO_POSITION
     public static final int SLIDE_MANUAL_INCREMENT = 50;
+    public enum SLideState { IDLE, RUNNING, STALLED }
+    private SLideState currentSlideState = SLideState.RUNNING;
     public static int slideTargetPos = 0; // Target position for the slide motor (in encoder ticks)
     public static double clawPosition = 0.0;
     public static final double CLAW_STOWED = 1;
@@ -128,17 +137,19 @@ public class AtlantaTankPresetArm extends OpMode{
     // --- Arm & Wrist Preset Positions ---
     // High Preset - Tag mailbox with arm and wrist tipped up so the robot can just drive forward until it makes contact
     public static final int ARM_PRESET_HIGH_TICKS = 400;
-    public static final int SLIDE_PRESET_HIGH_TICKS = 0;
+    public static final int SLIDE_PRESET_HIGH_TICKS = 2000; // TODO: Test and adjust
     public static final double WRIST_PRESET_HIGH_POS = 1.0;    // Wrist tipped up
 
     // Middle Preset - Lift ordnance off the ground and hold it high enough to be deposited in containment box
     public static final int ARM_PRESET_MIDDLE_TICKS = -100;    // TODO: Placeholder - adjust after testing
-    public static final int SLIDE_PRESET_MIDDLE_TICKS = 0;
+    public static final int SLIDE_PRESET_MIDDLE_TICKS = 1000; // TODO: Test and adjust
     public static final double WRIST_PRESET_MIDDLE_POS = WRIST_PRESET_HIGH_POS;
 
     // Low Preset / Intake Preset - Move arm and wrist next to ground to pick up ordnance
     public static final int ARM_PRESET_LOW_TICKS = -3;       // TODO: Placeholder - adjust after testing
     public static final int SLIDE_PRESET_LOW_TICKS = 260;
+
+    public static final int ArmLimmiter = 1;
     public static final double WRIST_PRESET_LOW_POS = WRIST_PRESET_HIGH_POS;
 
 //--------------------------------------------------------------------------------------------------
@@ -215,6 +226,8 @@ public class AtlantaTankPresetArm extends OpMode{
 
         // Set target positions to whatever position they are at on robot startup so that the arm motor and servos don't move on initialization or play
         armTargetPos = arm_motor.getCurrentPosition();
+        slide_motor.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
+        slide_motor.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         slideTargetPos = slide_motor.getCurrentPosition();
         wristPosition = WRIST_FOLDED;
         clawPosition = CLAW_STOWED;
@@ -232,6 +245,7 @@ public class AtlantaTankPresetArm extends OpMode{
 
         // Send telemetry message to signify robot waiting;
         telemetry.addData(">", "Robot Ready.  Press START.");    //
+        telemetry.addData(">", "Arm Voltage");
     }
 
     /*
@@ -248,11 +262,14 @@ public class AtlantaTankPresetArm extends OpMode{
     public void start() {
     }
 
+
     /*
      * Code to run REPEATEDLY after the driver hits START but before they hit STOP
      */
     @Override
     public void loop() {
+        updateSlide();
+
         double driveInput;
         double turnInput;
         double leftPowerRaw;
@@ -373,6 +390,8 @@ public class AtlantaTankPresetArm extends OpMode{
         }
         // Slide control is independent of arm presets
         slideTargetPos = slideTargetPos + (int) (gamepad1.right_stick_x * SLIDE_MANUAL_INCREMENT);
+        /// if (slideTargetPos > SLIDE_PRESET_HIGH_TICKS) slideTargetPos = SLIDE_PRESET_HIGH_TICKS; // TODO: uncomment once we verify high preset ticks
+        /// else if (slideTargetPos < SLIDE_PRESET_LOW_TICKS) slideTargetPos = SLIDE_PRESET_LOW_TICKS; // TODO: uncomment once we verify high preset ticks
 
         arm_motor.setTargetPosition(armTargetPos);
         slide_motor.setTargetPosition(slideTargetPos);
@@ -388,14 +407,15 @@ public class AtlantaTankPresetArm extends OpMode{
         slide_motor.setPower(SLIDE_RTP_MAX_SPEED);
 
         // Send telemetry message to signify robot running;
-        telemetry.addData("Drive Input", "%.2f", driveInput);
-        telemetry.addData("Turn Input", "%.2f", turnInput);
-        telemetry.addData("Left Scaled", "%.2f", leftScaledPower);
-        telemetry.addData("Right Scaled", "%.2f", rightScaledPower);
+//        telemetry.addData("Drive Input", "%.2f", driveInput);
+//        telemetry.addData("Turn Input", "%.2f", turnInput);
+//        telemetry.addData("Left Scaled", "%.2f", leftScaledPower);
+//        telemetry.addData("Right Scaled", "%.2f", rightScaledPower);
         telemetry.addData("claw position: ", clawPosition);
         telemetry.addData("wrist position: ", wristPosition);
         telemetry.addData("arm position: ", arm_motor.getCurrentPosition());
         telemetry.addData("slide position: ", slide_motor.getCurrentPosition());
+        telemetry.addData("Slide Current (Amps)", slide_motor.getCurrent(CurrentUnit.AMPS));
     }
 
     /*
@@ -421,5 +441,36 @@ public class AtlantaTankPresetArm extends OpMode{
         }
         telemetry.addData(">", "Robot Stopped.");
         telemetry.update();
+    }
+
+
+    public void updateSlide() {
+        switch (currentSlideState) {
+            case STALLED:
+                // Motor is in a cooldown period.
+                if (stateTimer.seconds() > STALL_COOLDOWN_SECONDS) {
+                    currentSlideState = SLideState.RUNNING; // Attempt to recover
+                    arm_motor.setPower(1.0); // Re-enable RUN_TO_POSITION power
+                }
+                return; // Block other actions during cooldown
+
+
+            case RUNNING:
+                // --- Stall Detection ---
+
+                    if (arm_motor.getCurrent(CurrentUnit.AMPS) > STALL_CURRENT_AMPS) {
+                        arm_motor.setPower(0); // Immediately cut power
+                        stateTimer.reset();
+                        currentSlideState = SLideState.STALLED;
+                        return; // Exit to begin cooldown
+                    }
+                break;
+
+            //Is not running but on
+            case IDLE:
+                break;
+        }
+
+        telemetry.addData("Slide state", currentSlideState.toString());
     }
 }
