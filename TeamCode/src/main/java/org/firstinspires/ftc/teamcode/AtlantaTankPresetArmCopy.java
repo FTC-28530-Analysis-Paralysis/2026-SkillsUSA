@@ -42,8 +42,6 @@ import org.firstinspires.ftc.robotcore.external.hardware.camera.WebcamName;
 import org.firstinspires.ftc.robotcore.external.navigation.CurrentUnit;
 import org.firstinspires.ftc.vision.VisionPortal;
 
-import java.util.Set;
-
 /*
  * This OpMode executes a Tank Drive control TeleOp a direct drive robot
  * The code is structured as an Iterative OpMode
@@ -136,20 +134,26 @@ public class AtlantaTankPresetArmCopy extends OpMode{
 
     // --- Arm & Wrist Preset Positions ---
     // High Preset - Tag mailbox with arm and wrist tipped up so the robot can just drive forward until it makes contact
-    public static final int ARM_PRESET_HIGH_TICKS = 400;
-    public static final int SLIDE_PRESET_HIGH_TICKS = 2000; // TODO: Test and adjust
+    public static final int ARM_PRESET_HIGH_TICKS = 1100;
+    public static final int SLIDE_PRESET_HIGH_TICKS = 520;
     public static final double WRIST_PRESET_HIGH_POS = 1.0;    // Wrist tipped up
 
     // Middle Preset - Lift ordnance off the ground and hold it high enough to be deposited in containment box
     public static final int ARM_PRESET_MIDDLE_TICKS = -100;    // TODO: Placeholder - adjust after testing
-    public static final int SLIDE_PRESET_MIDDLE_TICKS = 1000; // TODO: Test and adjust
+    public static final int SLIDE_PRESET_MIDDLE_TICKS = 260;
     public static final double WRIST_PRESET_MIDDLE_POS = WRIST_PRESET_HIGH_POS;
 
     // Low Preset / Intake Preset - Move arm and wrist next to ground to pick up ordnance
-    public static final int ARM_PRESET_LOW_TICKS = -3;       // TODO: Placeholder - adjust after testing
-    public static final int SLIDE_PRESET_LOW_TICKS = 260;
+    public static final int ARM_PRESET_LOW_TICKS = -360;       // TODO: Placeholder - adjust after testing
+    public static final int SLIDE_PRESET_LOW_TICKS = 5;
+    public static final double SLIDE_MM_PER_TICK =  60 // Pulley tooth count
+                                                    * 2 // 2mm Pitch
+                                                    / ((((1+(46.0/17.0))) * (1+(46.0/17.0))) * 28); //formula for encoder resolution, ticks per revolution
+    public static final double SLIDE_MAX_EXTEND_MM = SLIDE_MM_PER_TICK * SLIDE_PRESET_HIGH_TICKS;
+    public static final double SLIDE_MAX_EXTEND_INCHES = SLIDE_MAX_EXTEND_MM /25.4;
+    public static double slidePeakCurrent = 0;
 
-    public static final int ArmLimmiter = 1;
+    public static final int ArmLimiter = 1;
     public static final double WRIST_PRESET_LOW_POS = WRIST_PRESET_HIGH_POS;
 
 //--------------------------------------------------------------------------------------------------
@@ -234,6 +238,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
 
         arm_motor.setTargetPosition(armTargetPos);
         slide_motor.setTargetPosition(slideTargetPos);
+        slidePeakCurrent = 0;
 
         // If there are encoders connected, switch to RUN_USING_ENCODER mode for greater accuracy
 
@@ -268,7 +273,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
      */
     @Override
     public void loop() {
-        updateSlide();
+//        updateSlide();
 
         double driveInput;
         double turnInput;
@@ -390,8 +395,9 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         }
         // Slide control is independent of arm presets
         slideTargetPos = slideTargetPos + (int) (gamepad1.right_stick_x * SLIDE_MANUAL_INCREMENT);
-        /// if (slideTargetPos > SLIDE_PRESET_HIGH_TICKS) slideTargetPos = SLIDE_PRESET_HIGH_TICKS; // TODO: uncomment once we verify high preset ticks
-        /// else if (slideTargetPos < SLIDE_PRESET_LOW_TICKS) slideTargetPos = SLIDE_PRESET_LOW_TICKS; // TODO: uncomment once we verify high preset ticks
+
+      if (slideTargetPos > SLIDE_PRESET_HIGH_TICKS) slideTargetPos = SLIDE_PRESET_HIGH_TICKS;
+        else if (slideTargetPos < SLIDE_PRESET_LOW_TICKS) slideTargetPos = SLIDE_PRESET_LOW_TICKS;
 
         arm_motor.setTargetPosition(armTargetPos);
         slide_motor.setTargetPosition(slideTargetPos);
@@ -416,6 +422,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         telemetry.addData("arm position: ", arm_motor.getCurrentPosition());
         telemetry.addData("slide position: ", slide_motor.getCurrentPosition());
         telemetry.addData("Slide Current (Amps)", slide_motor.getCurrent(CurrentUnit.AMPS));
+        telemetry.addData("Slide Peak Current (Amps)", slidePeakCurrent);
     }
 
     /*
@@ -444,33 +451,33 @@ public class AtlantaTankPresetArmCopy extends OpMode{
     }
 
 
-    public void updateSlide() {
-        switch (currentSlideState) {
-            case STALLED:
-                // Motor is in a cooldown period.
-                if (stateTimer.seconds() > STALL_COOLDOWN_SECONDS) {
-                    currentSlideState = SLideState.RUNNING; // Attempt to recover
-                    arm_motor.setPower(1.0); // Re-enable RUN_TO_POSITION power
-                }
-                return; // Block other actions during cooldown
-
-
-            case RUNNING:
-                // --- Stall Detection ---
-
-                    if (arm_motor.getCurrent(CurrentUnit.AMPS) > STALL_CURRENT_AMPS) {
-                        arm_motor.setPower(0); // Immediately cut power
-                        stateTimer.reset();
-                        currentSlideState = SLideState.STALLED;
-                        return; // Exit to begin cooldown
-                    }
-                break;
-
-            //Is not running but on
-            case IDLE:
-                break;
-        }
-
-        telemetry.addData("Slide state", currentSlideState.toString());
-    }
+//    public void updateSlide() {
+//        if (slide_motor.getCurrent(CurrentUnit.AMPS) > slidePeakCurrent) slidePeakCurrent = slide_motor.getCurrent(CurrentUnit.AMPS);
+//        switch (currentSlideState) {
+//            case STALLED:
+//                // Motor is in a cooldown period.
+//                if (stateTimer.seconds() > STALL_COOLDOWN_SECONDS) {
+//                    currentSlideState = SLideState.RUNNING; // Attempt to recover
+//                    slide_motor.setPower(1.0); // Re-enable RUN_TO_POSITION power
+//                }
+//                return; // Block other actions during cooldown
+//
+//            case RUNNING:
+//                // --- Stall Detection ---
+//
+//                    if (slide_motor.getCurrent(CurrentUnit.AMPS) > STALL_CURRENT_AMPS) {
+//                        slide_motor.setPower(0); // Immediately cut power
+//                        stateTimer.reset();
+//                        currentSlideState = SLideState.STALLED;
+//                        return; // Exit to begin cooldown
+//                    }
+//                break;
+//
+//            //Is not running but on
+//            case IDLE:
+//                break;
+//        }
+//
+//        telemetry.addData("Slide state", currentSlideState.toString());
+//    }
 }
