@@ -29,6 +29,7 @@
 
 package org.firstinspires.ftc.teamcode;
 
+import com.qualcomm.robotcore.eventloop.opmode.Disabled;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.DcMotor;
@@ -52,8 +53,8 @@ import org.firstinspires.ftc.vision.VisionPortal;
  * Use Android Studio to Copy this Class, and Paste it into your team's code folder with a new name.
  * Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list
  */
-
-@TeleOp(name="Atlanta Tank Preset Arm", group="Robot")
+@Disabled
+@TeleOp(name="Atlanta Tank", group="Robot")
 //@Disabled
 public class AtlantaTankPresetArm extends OpMode{
 

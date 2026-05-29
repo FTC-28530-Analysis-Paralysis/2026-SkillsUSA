@@ -55,13 +55,12 @@ import org.firstinspires.ftc.vision.VisionPortal;
  * Remove or comment out the @Disabled line to add this OpMode to the Driver Station OpMode list
  */
 
-@TeleOp(name="Skills USA Without", group="Robot")
+@TeleOp(name="Skills USA Square Input", group="Robot")
 //@Disabled
-public class AtlantaTankPresetArmCopy extends OpMode{
-
-
+public class AtlantaTankPresetArmCopyAgain extends OpMode{
 
     /* Declare OpMode members. */
+    public final ElapsedTime matchTimer = new ElapsedTime();
 
     public DcMotorEx left_front_drive = null;
     public DcMotorEx left_rear_drive = null;
@@ -75,6 +74,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
     private final ElapsedTime stateTimer = new ElapsedTime();
     private static final double STALL_COOLDOWN_SECONDS = 1.0;  //TODO: test and tune
     private static final double STALL_CURRENT_AMPS = 5.0; //TODO: test and tune
+
     double clawOffset = 0;
     final double ARM_TICKS_PER_DEGREE =
             28 // number of encoder ticks per rotation of the bare motor
@@ -124,10 +124,13 @@ public class AtlantaTankPresetArmCopy extends OpMode{
     private SLideState currentSlideState = SLideState.RUNNING;
     public static int slideTargetPos = 0; // Target position for the slide motor (in encoder ticks)
     public static double clawPosition = 0.0;
-    public static final double CLAW_STOWED = 1;
+    public static double CLAW_MAILBOX = 0.59;
+    public static final double CLAW_STOWED = 0.6;
+    public static final double CLAW_MAX = 1.0;
+    public static final double CLAW_CLOSED = 0.2;
     public static final double WRIST_MANUAL_INCREMENT = 0.01;
     public static double wristPosition = 0.0;
-    public static final double WRIST_FOLDED = 0;
+    public static final double WRIST_FOLDED = 0.2;
     public static boolean turtleMode = false;
     public static final double TURTLE_MODE_SPEED = .2;
     public static double driveSpeed = 1.0;
@@ -161,13 +164,6 @@ public class AtlantaTankPresetArmCopy extends OpMode{
 //--------------------------------------------------------------------------------------------------
     // These flags help detect single button presses rather than continuous holding.
 
-    // --- Gamepad 1 ---
-    // Drivetrain Presets
-    private boolean gamepad1_dpad_up_pressed_last_frame = false;
-    private boolean gamepad1_dpad_down_pressed_last_frame = false;
-    private boolean gamepad1_dpad_left_pressed_last_frame = false;
-    private boolean gamepad1_dpad_right_pressed_last_frame = false;
-
     // Arm/Wrist Presets
     private boolean gamepad1_y_pressed_last_frame = false;
     private boolean gamepad1_x_pressed_last_frame = false;
@@ -181,6 +177,8 @@ public class AtlantaTankPresetArmCopy extends OpMode{
      */
     @Override
     public void init() {
+
+
 
         // Create the vision portal by using a builder.
         VisionPortal.Builder builder = new VisionPortal.Builder();
@@ -236,7 +234,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         wristPosition = WRIST_FOLDED;
         clawPosition = CLAW_STOWED;
 
-        arm_motor.setTargetPosition(armTargetPos);
+        arm_motor.setTargetPosition(armTargetPos - 40);
         slide_motor.setTargetPosition(slideTargetPos);
         slidePeakCurrent = 0;
 
@@ -265,6 +263,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
      */
     @Override
     public void start() {
+        matchTimer.reset();
     }
 
 
@@ -281,25 +280,9 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         double rightPowerRaw;
         double denominator;
 
-
-        //Turtle mode slows driveInput motors when toggled with back button
-        // This uses a method called button latching which only toggles when you release the button
-        // to prevent accidentally reading multiple button presses
-        if(gamepad1.back && !gamepad1_back_pressed_last_frame) {
-            gamepad1_back_pressed_last_frame = true;
-        } else if (!gamepad1.back && gamepad1_back_pressed_last_frame) {
-            gamepad1_back_pressed_last_frame = false;
-            turtleMode = !turtleMode;
-        }
-
-        if (turtleMode)
-        {
-            driveSpeed = TURTLE_MODE_SPEED;
-        } else driveSpeed = 1;
-
         // Run wheels in tank mode (note: The joystick goes negative when pushed forward, so negate it)
-        driveInput = -gamepad1.left_stick_y;
-        turnInput = -gamepad1.left_stick_x;
+        driveInput = squareInputWithSign(-gamepad1.left_stick_y);
+        turnInput = squareInputWithSign(-gamepad1.left_stick_x);
         // --- Calculate Raw Power Values for Each Side (Arcade Logic) ---
         leftPowerRaw = driveInput - turnInput;
         rightPowerRaw = driveInput + turnInput;
@@ -329,12 +312,13 @@ public class AtlantaTankPresetArmCopy extends OpMode{
 
         // Claw code
         clawPosition += (gamepad1.right_trigger - gamepad1.left_trigger) * CLAW_SPEED;
+        if (gamepad1.dpadLeftWasPressed()) clawPosition = CLAW_MAILBOX;
 
         //Claw limit
-        if (clawPosition > 1)
-            clawPosition = 1;
-        else if (clawPosition < 0) {
-            clawPosition = 0;
+        if (clawPosition > CLAW_MAX)
+            clawPosition = CLAW_MAX;
+        else if (clawPosition < CLAW_CLOSED) {
+            clawPosition = CLAW_CLOSED;
         }
         claw.setPosition(clawPosition);
 
@@ -391,12 +375,12 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         // Adjust target positions based on right stick
         if (!armPresetActivatedThisLoop) { // Only allow manual arm if no arm/wrist preset was just hit
             // Invert right_stick_y if needed: common for up to be negative
-            armTargetPos = armTargetPos - (int) (gamepad1.right_stick_y * ARM_MANUAL_INCREMENT);
+            armTargetPos = armTargetPos - (int) (gamepad1.right_stick_y * 1 * ARM_MANUAL_INCREMENT);
         }
         // Slide control is independent of arm presets
-        slideTargetPos = slideTargetPos + (int) (gamepad1.right_stick_x * SLIDE_MANUAL_INCREMENT);
+        slideTargetPos = slideTargetPos + (int) (gamepad1.right_stick_x * 1 * SLIDE_MANUAL_INCREMENT);
 
-      if (slideTargetPos > SLIDE_PRESET_HIGH_TICKS) slideTargetPos = SLIDE_PRESET_HIGH_TICKS;
+        if (slideTargetPos > SLIDE_PRESET_HIGH_TICKS) slideTargetPos = SLIDE_PRESET_HIGH_TICKS;
         else if (slideTargetPos < SLIDE_PRESET_LOW_TICKS) slideTargetPos = SLIDE_PRESET_LOW_TICKS;
 
         arm_motor.setTargetPosition(armTargetPos);
@@ -423,6 +407,7 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         telemetry.addData("slide position: ", slide_motor.getCurrentPosition());
         telemetry.addData("Slide Current (Amps)", slide_motor.getCurrent(CurrentUnit.AMPS));
         telemetry.addData("Slide Peak Current (Amps)", slidePeakCurrent);
+        telemetry.addData("Match Timer", String.format("%d:%02d", (int)(matchTimer.seconds() / 60), (int)(matchTimer.seconds() % 60)));
     }
 
     /*
@@ -448,6 +433,18 @@ public class AtlantaTankPresetArmCopy extends OpMode{
         }
         telemetry.addData(">", "Robot Stopped.");
         telemetry.update();
+    }
+
+    double squareInputWithSign(double input){
+        boolean inputNegative = false;
+        if (input < 0) inputNegative = true;
+
+        input = input * input;
+
+        if (inputNegative){
+            input = input * -1;
+        }
+        return input;
     }
 
 
